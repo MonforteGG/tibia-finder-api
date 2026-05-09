@@ -29,8 +29,24 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 
 from exiva_parser import parse as parse_exiva
-from triangulator import TEMPLE_POSITIONS
 from tibiadata import get_player_status, TibiaDataError
+
+# Known temple positions for major cities {city: (x, y, z)}.
+# Tibia coordinate system: X increases East, Y increases South, Z=7 is ground floor outdoors.
+TEMPLE_POSITIONS = {
+    "Thais":        (32311, 32233, 7),
+    "Carlin":       (32360, 31782, 7),
+    "Venore":       (32934, 32076, 7),
+    "Edron":        (33219, 31862, 7),
+    "Ab'Dendriel":  (32710, 31642, 7),
+    "Kazordoon":    (32649, 31925, 7),
+    "Ankrahmun":    (32726, 32630, 7),
+    "Darashia":     (33196, 32455, 7),
+    "Liberty Bay":  (32325, 32600, 7),
+    "Port Hope":    (32594, 32694, 7),
+    "Svargrond":    (32548, 31467, 7),
+    "Yalahar":      (32777, 31521, 7),
+}
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
