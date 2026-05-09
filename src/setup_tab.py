@@ -56,7 +56,7 @@ def main():
 
     print()
     print("Saved to config.json.")
-    print("You can now run: python main.py <character>")
+    print("You can now start the API: uvicorn api:app --reload")
 
 
 if __name__ == "__main__":
