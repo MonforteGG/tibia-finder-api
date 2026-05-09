@@ -71,6 +71,7 @@ class Client:
             self._already_running = True
             self._log("Client already open, reusing window.")
             self._focus()
+            self._maximize()
             return
 
         if not os.path.exists(self.executable):
@@ -88,6 +89,7 @@ class Client:
     def login(self):
         """Full login from the login screen: types password and selects character."""
         self._focus()
+        self._maximize()
         time.sleep(_jitter(0.6))
 
         pyautogui.typewrite(self.password, interval=_typing_interval())
@@ -121,6 +123,7 @@ class Client:
         pyautogui.press("enter")
         self._log("Character selected, loading world...")
         self._wait_ingame(timeout=self.INGAME_TIMEOUT)
+        self._maximize()
         time.sleep(_jitter(1.2))
         self._log("In-game.")
 
@@ -141,13 +144,13 @@ class Client:
     #  Gameplay
     # ------------------------------------------------------------------ #
 
-    def drink_mana_potion(self):
-        """Use a mana potion via F2 and wait for it to take effect."""
+    def drink_mana_potion(self, key: str = "f2"):
+        """Use a mana potion via the configured hotkey and wait for it to take effect."""
         self._focus()
         time.sleep(_jitter(0.3))
-        pyautogui.press("f2")
+        pyautogui.press(key)
         time.sleep(_jitter(3.5, pct=0.15))
-        self._log("Mana potion used (F2).")
+        self._log(f"Mana potion used ({key}).")
 
     def cast_exiva(self, target_name: str):
         """Open chat and cast exiva on target_name."""
@@ -159,6 +162,31 @@ class Client:
         time.sleep(_jitter(0.3))
         pyautogui.press("enter")
         self._log(f"Exiva cast: {target_name}")
+
+    def cast_spell(self, spell: str):
+        """Open chat and cast a spell (no quotes, plain text)."""
+        self._focus()
+        time.sleep(_jitter(0.4))
+        pyautogui.press("enter")
+        time.sleep(_jitter(0.35))
+        pyautogui.typewrite(spell, interval=_typing_interval())
+        time.sleep(_jitter(0.3))
+        pyautogui.press("enter")
+        self._log(f"Spell cast: {spell}")
+
+    def save_general_log(self, tab_x: int, tab_y: int, save_x: int, save_y: int):
+        """Right-click the General chat tab, then click 'Save window'."""
+        self._focus()
+        time.sleep(_jitter(0.4))
+        move_mouse_like_human(tab_x, tab_y)
+        time.sleep(_jitter(0.15))
+        pyautogui.rightClick()
+        time.sleep(_jitter(0.5))
+        move_mouse_like_human(save_x, save_y)
+        time.sleep(_jitter(0.15))
+        pyautogui.click()
+        time.sleep(_jitter(0.4))
+        self._log("General log saved.")
 
     def save_server_log(self, tab_x: int, tab_y: int, save_x: int, save_y: int):
         """Right-click the Server Log tab, then click 'Save window'."""
@@ -178,40 +206,78 @@ class Client:
     #  Helpers
     # ------------------------------------------------------------------ #
 
-    def _focus(self, timeout: float = 15.0):
-        """Activate the Tibia window and wait until it actually has focus."""
-        deadline = time.time() + timeout
-        while time.time() < deadline:
+    def _focus(self):
+        """Activate the Tibia window and block until it actually has focus.
+
+        Uses AttachThreadInput to bypass Windows focus-stealing prevention.
+        Retries indefinitely — raises only if the window disappears entirely.
+        """
+        user32   = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        while True:
             win = self._get_window()
-            if win:
-                try:
-                    win.activate()
-                except Exception:
-                    # pygetwindow may raise ERROR_INVALID_HANDLE (code 6) as a
-                    # false positive: ShowWindow leaves a residual error on the thread
-                    # and SetForegroundWindow returns 0 even when it succeeded.
-                    # Verify real focus via _foreground_window_title instead of
-                    # propagating the exception.
-                    pass
-                time.sleep(0.3)
-                if "Tibia" in _foreground_window_title():
-                    time.sleep(_jitter(0.2))
-                    return
+            if not win:
+                raise RuntimeError("Tibia window not found.")
+            hwnd = win._hWnd
+
+            # Attach to the thread that currently owns the foreground window so
+            # that SetForegroundWindow is allowed (Windows blocks it otherwise).
+            fg_hwnd      = user32.GetForegroundWindow()
+            fg_thread    = user32.GetWindowThreadProcessId(fg_hwnd, None)
+            our_thread   = kernel32.GetCurrentThreadId()
+            attached     = False
+            if fg_thread and fg_thread != our_thread:
+                user32.AttachThreadInput(fg_thread, our_thread, True)
+                attached = True
+
+            if user32.IsIconic(hwnd):
+                user32.ShowWindow(hwnd, 9)  # SW_RESTORE only if minimized
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+
+            if attached:
+                user32.AttachThreadInput(fg_thread, our_thread, False)
+
+            time.sleep(0.3)
+            if user32.GetForegroundWindow() == hwnd:
+                time.sleep(_jitter(0.2))
+                return
             time.sleep(0.2)
-        raise RuntimeError("Could not focus the Tibia window.")
+
+    def _maximize(self):
+        win = self._get_window()
+        if win:
+            ctypes.windll.user32.ShowWindow(win._hWnd, 3)  # SW_MAXIMIZE
+            time.sleep(0.3)
+            self._log("Window maximized.")
 
     def _get_window(self):
         wins = gw.getWindowsWithTitle("Tibia")
-        return wins[0] if wins else None
+        if not wins:
+            return None
+        import psutil
+        tibia_dir = os.path.dirname(self.executable).lower()
+        for win in wins:
+            try:
+                pid = ctypes.c_ulong()
+                ctypes.windll.user32.GetWindowThreadProcessId(win._hWnd, ctypes.byref(pid))
+                if psutil.Process(pid.value).exe().lower().startswith(tibia_dir):
+                    return win
+            except Exception:
+                continue
+        return None
 
     def _wait_for_window(self, title: str, timeout: int = 60):
         deadline = time.time() + timeout
         last_diagnostic = time.time()
         while time.time() < deadline:
-            wins = gw.getWindowsWithTitle(title)
-            if wins:
-                wins[0].activate()
-                return wins[0]
+            win = self._get_window()
+            if win:
+                try:
+                    self._focus()
+                except Exception:
+                    pass
+                return win
             # Diagnostic every 10s: show all visible titles to detect if the
             # client opened with an unexpected title.
             if time.time() - last_diagnostic >= 10:

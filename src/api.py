@@ -1,15 +1,9 @@
 """
 TibiaFinder API — FastAPI
 
-POST /find
+GET /finder/{target}
     Full flow: verifies online status, opens the Tibia client, casts exiva with
     each character sequentially, and returns the raw readings.
-
-POST /parse
-    Parses an exiva message and returns the structured data.
-
-GET /cities
-    Lists all cities with known temple positions.
 """
 
 import asyncio
@@ -17,6 +11,7 @@ import concurrent.futures
 import json
 import os
 import queue
+import signal
 import sys
 import time
 import threading
@@ -25,10 +20,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import List, Optional
 
-from exiva_parser import parse as parse_exiva
 from tibiadata import get_player_status, TibiaDataError
 
 # Known temple positions for major cities {city: (x, y, z)}.
@@ -80,6 +74,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def _kill_tibia():
+    try:
+        import psutil
+        tibia_dir = os.path.dirname(_load_config().get("tibia_executable", "")).lower()
+        if not tibia_dir:
+            return
+        for proc in psutil.process_iter(["exe"]):
+            try:
+                exe = proc.info["exe"]
+                if exe and exe.lower().startswith(tibia_dir):
+                    proc.kill()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+@app.on_event("startup")
+async def _override_shutdown_signals():
+    def _handler(sig, frame):
+        _kill_tibia()
+        os._exit(0)
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, _handler)
+
+
 # Dedicated GUI thread — lives for the full lifetime of the app and is the only
 # thread that touches pyautogui/pygetwindow. A generic thread pool does not
 # guarantee the Windows desktop context required for GUI automation.
@@ -111,24 +131,6 @@ _find_lock = threading.Lock()
 # ── Models ─────────────────────────────────────────────────────────────────────
 
 
-class FindRequest(BaseModel):
-    target: str = Field(
-        ..., description="Exact name of the character to search for.", examples=["Bubble"]
-    )
-
-
-class ParsedReading(BaseModel):
-    message: str
-    target_name: str
-    is_here: bool
-    is_above: bool
-    is_below: bool
-    direction: Optional[str]
-    distance_qualifier: str
-    floor_qualifier: Optional[str]
-    distance_range_sqm: Optional[tuple]
-
-
 class ReadingDetail(BaseModel):
     character: str
     city: Optional[str] = None
@@ -147,31 +149,8 @@ class FindResponse(BaseModel):
     readings: List[ReadingDetail] = []
 
 
-class ParseResponse(BaseModel):
-    ok: bool
-    parsed: Optional[ParsedReading]
-    error: Optional[str] = None
-
-
-class ParseRequest(BaseModel):
-    message: str = Field(..., description="Raw exiva message from the server log.")
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-
-def _to_parsed_reading(msg: str, result) -> ParsedReading:
-    return ParsedReading(
-        message=msg,
-        target_name=result.target_name,
-        is_here=result.is_here,
-        is_above=result.is_above,
-        is_below=result.is_below,
-        direction=result.direction,
-        distance_qualifier=result.distance_qualifier,
-        floor_qualifier=result.floor_qualifier,
-        distance_range_sqm=result.distance_range,
-    )
 
 
 _DIR_ABBREV = {
@@ -207,11 +186,15 @@ def _run_find(
     The client is never closed.
     """
     from utils.client import Client
-    from utils.log_reader import current_size, wait_for_exiva
+    from utils.log_reader import current_size, wait_for_exiva, current_general_size, wait_for_spell
 
     MAX_MANA_RETRIES = 3
     tab = cfg.get("server_log_tab")
     save = cfg.get("save_window_pos")
+    general_tab = cfg.get("general_log_tab")
+    general_save = cfg.get("general_log_save_pos")
+    mana_check_spell = cfg.get("mana_check_spell", "utevo lux")
+    mana_potion_key = cfg.get("mana_potion_key", "f2")
     characters = cfg["characters"]
 
     if not tab or not save:
@@ -225,6 +208,7 @@ def _run_find(
 
     reading_details: list[ReadingDetail] = []
     first_char = True
+    target_offline = False
 
     for i, char_cfg in enumerate(characters):
         city = char_cfg["city"]
@@ -259,15 +243,32 @@ def _run_find(
                 if result:
                     break
 
-                if attempt < MAX_MANA_RETRIES:
-                    print(
-                        f"[WARN] Out of mana in {city}, using mana potion F2... ({attempt + 1}/{MAX_MANA_RETRIES})"
+                # No exiva result — check if we had mana (target offline) or not (need potion)
+                if general_tab and general_save:
+                    gen_size = current_general_size()
+                    client.cast_spell(mana_check_spell)
+                    time.sleep(2.0)
+                    client.save_general_log(
+                        general_tab["x"], general_tab["y"],
+                        general_save["x"], general_save["y"],
                     )
-                    client.drink_mana_potion()
+                    had_mana = wait_for_spell(mana_check_spell, gen_size, timeout=4.0)
+                    if had_mana:
+                        print(f"[INFO] Had mana but no exiva in {city} — target is offline.")
+                        target_offline = True
+                        break
+                    print(f"[WARN] No mana in {city} ({attempt + 1}/{MAX_MANA_RETRIES})")
                 else:
-                    print(
-                        f"[WARN] No exiva response in {city} after all retries."
-                    )
+                    print(f"[WARN] No exiva in {city} (general_log_tab not configured, assuming no mana).")
+
+                if attempt < MAX_MANA_RETRIES:
+                    client.drink_mana_potion(mana_potion_key)
+                else:
+                    print(f"[WARN] No exiva response in {city} after all retries.")
+
+            if target_offline:
+                client.logout(return_to_login=True)
+                break
 
             is_last = i == len(characters) - 1
             client.logout(return_to_login=is_last)
@@ -318,18 +319,21 @@ def _run_find(
 
 async def _find(target: str) -> FindResponse:
     world = _load_world()
+    level: Optional[int] = None
+    vocation: Optional[str] = None
 
     try:
         status = await get_player_status(target, world)
+        if not status.is_online:
+            return FindResponse(
+                target=target,
+                is_online=False,
+                error=f"'{target}' is not online in '{world}'.",
+            )
+        level = status.level
+        vocation = status.vocation
     except TibiaDataError as e:
-        raise HTTPException(status_code=503, detail=f"TibiaData unavailable: {e}")
-
-    if not status.is_online:
-        return FindResponse(
-            target=target,
-            is_online=False,
-            error=f"'{target}' is not online in '{world}'.",
-        )
+        print(f"[WARN] TibiaData failed for '{target}': {e} — continuing without online check.")
 
     if not _find_lock.acquire(blocking=False):
         raise HTTPException(
@@ -340,7 +344,7 @@ async def _find(target: str) -> FindResponse:
     try:
         cfg = _load_config()
         cf_future: concurrent.futures.Future = concurrent.futures.Future()
-        _gui_queue.put((_run_find, (target, cfg, status.level, status.vocation), cf_future))
+        _gui_queue.put((_run_find, (target, cfg, level, vocation), cf_future))
         return await asyncio.wrap_future(cf_future)
     finally:
         _find_lock.release()
@@ -351,24 +355,6 @@ async def find_by_name(target: str):
     """Find a character by name (GET)."""
     return await _find(target)
 
-
-@app.post("/find", response_model=FindResponse)
-async def find_endpoint(body: FindRequest):
-    """Find a character by name (POST with JSON body)."""
-    return await _find(body.target)
-
-
-@app.post("/parse", response_model=ParseResponse)
-def parse_endpoint(body: ParseRequest):
-    """Parse an exiva message."""
-    message = body.message
-    result = parse_exiva(message)
-    if result is None:
-        return ParseResponse(
-            ok=False,
-            error="Message does not match any known exiva format.",
-        )
-    return ParseResponse(ok=True, parsed=_to_parsed_reading(message, result))
 
 
 @app.get("/health")
