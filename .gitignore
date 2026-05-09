@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+src/config/config.json
+decompressor/bin/
+decompressor/obj/
+*.user

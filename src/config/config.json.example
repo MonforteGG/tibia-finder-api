@@ -1,0 +1,47 @@
+{
+  "world": "Antica",
+  "email": "your_tibia_email@example.com",
+  "password": "your_tibia_password",
+  "tibia_executable": "C:\\Users\\YourUser\\AppData\\Local\\Tibia\\Tibia.exe",
+  "client_load_seconds": 20,
+  "characters": [
+    {
+      "name": "CharacterName1",
+      "char_index": 0,
+      "city": "Venore",
+      "temple_position": {
+        "x": 32958,
+        "y": 32076,
+        "z": 7
+      }
+    },
+    {
+      "name": "CharacterName2",
+      "char_index": 1,
+      "city": "Ab'Dendriel",
+      "temple_position": {
+        "x": 32732,
+        "y": 31632,
+        "z": 7
+      }
+    },
+    {
+      "name": "CharacterName3",
+      "char_index": 2,
+      "city": "Thais",
+      "temple_position": {
+        "x": 32369,
+        "y": 32241,
+        "z": 7
+      }
+    }
+  ],
+  "server_log_tab": {
+    "x": 0,
+    "y": 0
+  },
+  "save_window_pos": {
+    "x": 0,
+    "y": 0
+  }
+}
