@@ -157,13 +157,6 @@ class ParseRequest(BaseModel):
     message: str = Field(..., description="Raw exiva message from the server log.")
 
 
-class CityInfo(BaseModel):
-    name: str
-    x: int
-    y: int
-    z: int
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -291,7 +284,7 @@ def _run_find(
         if result is None:
             continue
 
-        pos = char_cfg.get("temple_position") or TEMPLE_POSITIONS.get(city)
+        pos = TEMPLE_POSITIONS.get(city)
         if pos is None:
             print(f"[WARN] Unknown position for {city}.")
             continue
@@ -376,15 +369,6 @@ def parse_endpoint(body: ParseRequest):
             error="Message does not match any known exiva format.",
         )
     return ParseResponse(ok=True, parsed=_to_parsed_reading(message, result))
-
-
-@app.get("/cities", response_model=List[CityInfo])
-def list_cities():
-    """List all cities with a known temple position."""
-    return [
-        CityInfo(name=name, x=pos[0], y=pos[1], z=pos[2])
-        for name, pos in sorted(TEMPLE_POSITIONS.items())
-    ]
 
 
 @app.get("/health")

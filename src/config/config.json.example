@@ -8,32 +8,17 @@
     {
       "name": "CharacterName1",
       "char_index": 0,
-      "city": "Venore",
-      "temple_position": {
-        "x": 32958,
-        "y": 32076,
-        "z": 7
-      }
+      "city": "Venore"
     },
     {
       "name": "CharacterName2",
       "char_index": 1,
-      "city": "Ab'Dendriel",
-      "temple_position": {
-        "x": 32732,
-        "y": 31632,
-        "z": 7
-      }
+      "city": "Ab'Dendriel"
     },
     {
       "name": "CharacterName3",
       "char_index": 2,
-      "city": "Thais",
-      "temple_position": {
-        "x": 32369,
-        "y": 32241,
-        "z": 7
-      }
+      "city": "Thais"
     }
   ],
   "server_log_tab": {
