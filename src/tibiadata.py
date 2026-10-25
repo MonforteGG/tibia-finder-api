@@ -1,6 +1,6 @@
 """
-Client for TibiaData API v4.
-https://api.tibiadata.com/v4/
+Client for TibiaData API v5.
+https://api.tibiadata.com/v5/
 
 Used to verify whether a character is online on a given world and to fetch
 basic character info (level, vocation).
@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 
-TIBIADATA_BASE = "https://api.tibiadata.com/v4"
+TIBIADATA_BASE = "https://api.tibiadata.com/v5"
 # TibiaData caches the world online list — typically every ~60 seconds.
 _REQUEST_TIMEOUT = 10.0
 
@@ -31,7 +31,7 @@ async def get_player_status(player_name: str, world: str) -> PlayerStatus:
     """
     Return online status, level and vocation for `player_name` in `world`.
 
-    Uses GET /v4/world/{world} which includes level and vocation for each
+    Uses GET /v5/world/{world} which includes level and vocation for each
     online player. Comparison is case-insensitive.
 
     Raises:

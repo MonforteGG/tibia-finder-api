@@ -4,7 +4,7 @@ Local REST API that automates the Tibia client to cast `exiva` from multiple sco
 
 ## How it works
 
-1. **Online check** — queries [TibiaData](https://tibiadata.com) to verify the target is online. If TibiaData is unavailable the search continues anyway.
+1. **Online check** — queries [TibiaData API v5](https://tibiadata.com) to verify the target is online. If TibiaData is unavailable or the configured world is not found (HTTP 404), the search logs a warning and continues anyway.
 2. **Client automation** — opens the Tibia client (or reuses it if already running), logs in with the first scout character, and casts `exiva "Target"` from their city.
 3. **Log reading** — after each cast the Server Log is saved to disk and parsed for the exiva response (direction + distance).
 4. **Mana check** — if no exiva response is found, casts a secondary spell (default `utevo lux`) and checks the Local Chat log. If the spell appears, the character had mana and the target is simply offline — search stops immediately. If the spell does not appear, a mana potion is used and the cast is retried (up to 3 times).
